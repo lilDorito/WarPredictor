@@ -8,24 +8,26 @@ import re
 import json
 import time
 import random
+import os
 from datetime import date, timedelta
 
+
 # Driver Setup
+
 def make_driver():
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-
-    # Human-like fingerprinting
     options.add_argument(
         "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
-
     return webdriver.Chrome(options=options)
 
+
 # Helpers
+
 def human_delay(a=2.5, b=6.5):
     time.sleep(random.uniform(a, b))
 
@@ -37,23 +39,26 @@ def decode_unicode(text):
         text
     )
 
+
+def load_checkpoint(path="checkpoint.json"):
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        print(f"[i] Resuming from checkpoint — {len(data)} months already scraped.")
+        return data
+    return []
+
+
+def save_checkpoint(results, path="checkpoint.json"):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+
+
 # Chart Extraction
-def extract_chart_data(html, driver=None):
+
+def extract_chart_data(html):
     html = decode_unicode(html)
     results = {}
-
-    if driver is not None:
-        try:
-            js_data = driver.execute_script("""
-                return window.chartData || window.__chartData || null;
-            """)
-
-            if js_data:
-                results.update(js_data)
-                return results
-
-        except:
-            pass
 
     # Alarms by region
     m = re.search(r"run_count.*?labels:\[([^\]]+)\].*?data:\[([^\]]+)\]", html, re.DOTALL)
@@ -103,74 +108,107 @@ def extract_chart_data(html, driver=None):
 
     return results
 
+
 # Period Scraper
-def scrape_period(driver, from_date, to_date):
+
+def scrape_period(driver, from_date, to_date, max_retries=3):
     url = f"https://air-alarms.in.ua/?from={from_date}&to={to_date}"
 
-    for attempt in range(3):
-        driver.get(url)
-
+    for attempt in range(1, max_retries + 1):
         try:
+            driver.get(url)
+
             WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.ID, "by-count"))
             )
-        except:
-            pass
 
-        human_delay()
+            human_delay()
+            html = driver.page_source
 
-        html = driver.page_source
+            if "Just a moment" in html:
+                print(f"  [!] Cloudflare detected (attempt {attempt}/{max_retries}) — waiting 20s...")
+                time.sleep(20)
+                continue
 
-        if "Just a moment" in html:
-            print("  [!] Cloudflare detected — waiting longer...")
-            time.sleep(20)
-            continue
+            data = extract_chart_data(html)
 
-        return extract_chart_data(html, driver)
+            if not data:
+                print(f"  [!] Empty data on attempt {attempt}/{max_retries} — retrying...")
+                human_delay(3, 7)
+                continue
 
+            return data
+
+        except Exception as e:
+            print(f"  [!] Attempt {attempt}/{max_retries} failed: {e}")
+            human_delay(3, 7)
+
+    print(f"  [✗] All {max_retries} attempts failed for {from_date} → {to_date}")
     return {}
 
+
+# Main
+
 def main():
-    driver = make_driver()
+    OUTPUT_FILE = "air_alarms_historical.json"
+    CHECKPOINT_FILE = "checkpoint.json"
 
-    driver.get("https://air-alarms.in.ua")
-    human_delay(4, 8)
-
-    all_results = []
+    all_results = load_checkpoint(CHECKPOINT_FILE)
+    scraped_periods = {r["period_from"] for r in all_results}
 
     start = date(2022, 2, 24)
     end = date(2026, 3, 1)
-
     current = start
 
-    while current < end:
-        next_month = (current.replace(day=1) + timedelta(days=32)).replace(day=1)
-        to_date = min(next_month - timedelta(days=1), end)
+    driver = make_driver()
 
-        print(f"Scraping {current} → {to_date}")
+    try:
+        driver.get("https://air-alarms.in.ua")
+        human_delay(4, 8)
 
-        try:
+        while current < end:
+            next_month = (current.replace(day=1) + timedelta(days=32)).replace(day=1)
+            to_date = min(next_month - timedelta(days=1), end)
+
+            period_key = str(current)
+
+            # Skip already scraped periods (resume support)
+            if period_key in scraped_periods:
+                print(f"Skipping {current} → {to_date} (already scraped)")
+                current = next_month
+                continue
+
+            print(f"Scraping {current} → {to_date} ...", end=" ", flush=True)
+
             data = scrape_period(driver, current.isoformat(), to_date.isoformat())
 
             data["period_from"] = str(current)
             data["period_to"] = str(to_date)
 
             all_results.append(data)
+            scraped_periods.add(period_key)
 
-            print(f"  ✓ OK (fields: {len(data)})")
+            fields = len([k for k in data if k not in ("period_from", "period_to")])
+            print(f"✓  ({fields} chart fields extracted)")
 
-        except Exception as e:
-            print(f"  ✗ Failed: {e}")
+            save_checkpoint(all_results, CHECKPOINT_FILE)
 
-        human_delay()
-        current = next_month
+            human_delay()
+            current = next_month
 
-    driver.quit()
+    except KeyboardInterrupt:
+        print("\n[i] Interrupted by user - progress saved to checkpoint.")
 
-    with open("air_alarms_historical.json", "w", encoding="utf-8") as f:
+    finally:
+        driver.quit()
+
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(all_results, f, ensure_ascii=False, indent=2)
 
-    print(f"\nDone. Saved {len(all_results)} months.")
+    if os.path.exists(CHECKPOINT_FILE):
+        os.remove(CHECKPOINT_FILE)
+
+    print(f"\nDone. Saved {len(all_results)} months to {OUTPUT_FILE}.")
 
 
 if __name__ == "__main__":
