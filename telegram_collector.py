@@ -11,7 +11,7 @@ load_dotenv()
 API_ID = int(os.getenv("TELEGRAM_API_ID"))
 API_HASH = os.getenv("TELEGRAM_API_HASH")
 
-CHANELS = ["radar_raketa", "Ukraine_UA_24_7", "air_alert_telegram", "alarmua", "ukrpravda_news", "pravda_ukraineee", "suspilnenews",
+CHANNELS = ["radar_raketa", "Ukraine_UA_24_7", "air_alert_telegram", "alarmua", "ukrpravda_news", "pravda_ukraineee", "suspilnenews",
             "uniannet", "hromadske_ua", "war_monitor", "nexta_live", "GeneralStaffZSU", "kpszsu"
 ]
 
@@ -21,7 +21,11 @@ KEYWORDS = [
     "влучання", "попадание"
 ]
 
-OUTPUT_FILE = "D:/war_prediction/telegram_data.parquet"
+OUTPUT_FILE = os.path.join(
+    os.getcwd(),
+    "war_prediction",
+    "telegram_data.parquet"
+)
 
 def load_existing_ids():
     if os.path.exists(OUTPUT_FILE):
@@ -59,17 +63,17 @@ async def main():
 
     existing_ids = load_existing_ids()
     data = []
-    since_date = datetime(2026, 3, 3, tzinfo=timezone.utc) - timedelta(days=720)
+    since_date = datetime.now(timezone.utc) - timedelta(days=720)
     
     async with TelegramClient("sesion", API_ID, API_HASH) as client:
 
-        for chanel in CHANELS:
+        for channel in CHANNELS:
             try:
                 count = 0
-                async for message in client.iter_messages(chanel):
+                async for message in client.iter_messages(channel):
                     count += 1
                     if count % 1000 == 0:
-                        print(f"{chanel}: зібрано {count} повідомлень...")
+                        print(f"{channel}: зібрано {count} повідомлень...")
 
                     if message.date < since_date:
                         break
@@ -87,11 +91,11 @@ async def main():
                             "message_id": message.id,
                             "message_date": message.date,
                             "message_text": clean_text,
-                            "chanel": chanel
+                            "chanel": channel
                         })
 
             except Exception as e:
-                print(f"Error in {chanel}: {e}")
+                print(f"Error in {channel}: {e}")
 
     if not data:
         print("Нічого не зібрано")
