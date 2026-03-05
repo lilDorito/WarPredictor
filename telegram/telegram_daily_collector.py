@@ -21,7 +21,12 @@ KEYWORDS = [
     "влучання", "попадание"
 ]
 
-OUTPUT_FILE = "/war_prediction/telegram_data.parquet"
+OUTPUT_FILE = os.path.join(
+    os.getcwd(),
+    "war_prediction",
+    "telegram_data.parquet"
+)
+
 
 def load_existing_ids():
     if os.path.exists(OUTPUT_FILE):
