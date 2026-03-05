@@ -27,7 +27,6 @@ OUTPUT_FILE = os.path.join(
     "telegram_data.parquet"
 )
 
-
 def load_existing_ids():
     if os.path.exists(OUTPUT_FILE):
         df = pd.read_parquet(OUTPUT_FILE, columns=["message_id"])
