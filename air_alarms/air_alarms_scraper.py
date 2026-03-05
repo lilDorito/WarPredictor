@@ -11,9 +11,6 @@ import random
 import os
 from datetime import date, timedelta
 
-
-# Driver Setup
-
 def make_driver():
     options = Options()
     options.add_argument("--headless")
@@ -25,12 +22,8 @@ def make_driver():
     )
     return webdriver.Chrome(options=options)
 
-
-# Helpers
-
 def human_delay(a=2.5, b=6.5):
     time.sleep(random.uniform(a, b))
-
 
 def decode_unicode(text):
     return re.sub(
@@ -38,7 +31,6 @@ def decode_unicode(text):
         lambda m: chr(int(m.group(1), 16)),
         text
     )
-
 
 def load_checkpoint(path="checkpoint.json"):
     if os.path.exists(path):
@@ -48,13 +40,9 @@ def load_checkpoint(path="checkpoint.json"):
         return data
     return []
 
-
 def save_checkpoint(results, path="checkpoint.json"):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
-
-
-# Chart Extraction
 
 def extract_chart_data(html):
     html = decode_unicode(html)
@@ -82,11 +70,7 @@ def extract_chart_data(html):
         results["by_hour"] = dict(zip(hours, data))
 
     # Duration
-    m = re.search(
-        r"labels:\[([^\]]+)\],datasets:\[\{label:'Тривалість тривог[^']*',data:\[([^\]]+)\]",
-        html,
-        re.DOTALL
-    )
+    m = re.search(r"labels:\[([^\]]+)\],datasets:\[\{label:'Тривалість тривог[^']*',data:\[([^\]]+)\]", html, re.DOTALL)
     if m:
         labels = re.findall(r'"(.*?)"', m.group(1))
         data = re.findall(r'([\d.]+)', m.group(2))
@@ -107,9 +91,6 @@ def extract_chart_data(html):
         results["artillery_by_region"] = dict(zip(labels, map(int, data)))
 
     return results
-
-
-# Period Scraper
 
 def scrape_period(driver, from_date, to_date, max_retries=3):
     url = f"https://air-alarms.in.ua/?from={from_date}&to={to_date}"
@@ -143,11 +124,8 @@ def scrape_period(driver, from_date, to_date, max_retries=3):
             print(f"  [!] Attempt {attempt}/{max_retries} failed: {e}")
             human_delay(3, 7)
 
-    print(f"  [✗] All {max_retries} attempts failed for {from_date} → {to_date}")
+    print(f"  [x] All {max_retries} attempts failed for {from_date} → {to_date}")
     return {}
-
-
-# Main
 
 def main():
     OUTPUT_FILE = "air_alarms_historical.json"
@@ -172,13 +150,12 @@ def main():
 
             period_key = str(current)
 
-            # Skip already scraped periods (resume support)
             if period_key in scraped_periods:
-                print(f"Skipping {current} → {to_date} (already scraped)")
+                print(f"Skipping {current} -> {to_date} (already scraped)")
                 current = next_month
                 continue
 
-            print(f"Scraping {current} → {to_date} ...", end=" ", flush=True)
+            print(f"Scraping {current} -> {to_date} ...", end=" ", flush=True)
 
             data = scrape_period(driver, current.isoformat(), to_date.isoformat())
 
@@ -189,7 +166,7 @@ def main():
             scraped_periods.add(period_key)
 
             fields = len([k for k in data if k not in ("period_from", "period_to")])
-            print(f"✓  ({fields} chart fields extracted)")
+            print(f"[+] ({fields} chart fields extracted)")
 
             save_checkpoint(all_results, CHECKPOINT_FILE)
 
