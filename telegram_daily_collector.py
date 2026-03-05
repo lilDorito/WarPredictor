@@ -21,7 +21,7 @@ KEYWORDS = [
     "влучання", "попадание"
 ]
 
-OUTPUT_FILE = "D:/war_prediction/telegram_data.parquet"
+OUTPUT_FILE = "/war_prediction/telegram_data.parquet"
 
 def load_existing_ids():
     if os.path.exists(OUTPUT_FILE):
