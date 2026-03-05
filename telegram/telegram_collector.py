@@ -1,6 +1,5 @@
 import pandas as pd
 from datetime import datetime, timedelta, timezone
-import time
 import re
 import os
 import asyncio
@@ -70,6 +69,8 @@ async def main():
     if os.path.exists(OUTPUT_FILE):
         df = pd.read_parquet(OUTPUT_FILE)
         since_date = df["message_date"].max()
+        if since_date.tzinfo is None:
+            since_date = since_date.replace(tzinfo=timezone.utc)
     else:
         since_date = datetime.now(timezone.utc) - timedelta(days=1)
     
@@ -113,6 +114,7 @@ async def main():
     else:
         combined_df = df
 
+    combined_df = combined_df.drop_duplicates(subset=["message_id"])        
     combined_df = combined_df.sort_values("message_date", ascending=False)
     combined_df.to_parquet(OUTPUT_FILE, index=False)
 
