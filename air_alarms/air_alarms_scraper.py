@@ -205,7 +205,7 @@ def main():
     scraped_periods = {r["period_from"] for r in all_results}
 
     start = date(2022, 2, 24)
-    end = date(2026, 3, 1)
+    end = date.today()
     current = start
 
     driver = make_driver()
