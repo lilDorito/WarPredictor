@@ -9,6 +9,8 @@ import json
 import time
 import random
 import os
+import math
+import pandas as pd
 from datetime import date, timedelta
 
 def make_driver():
@@ -36,7 +38,7 @@ def load_checkpoint(path="checkpoint.json"):
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        print(f"[i] Resuming from checkpoint — {len(data)} months already scraped.")
+        print(f"[i] Resuming from checkpoint - {len(data)} months already scraped.")
         return data
     return []
 
@@ -48,42 +50,36 @@ def extract_chart_data(html):
     html = decode_unicode(html)
     results = {}
 
-    # Alarms by region
     m = re.search(r"run_count.*?labels:\[([^\]]+)\].*?data:\[([^\]]+)\]", html, re.DOTALL)
     if m:
         labels = re.findall(r'"(.*?)"', m.group(1))
         data = re.findall(r'"?(\d+)"?', m.group(2))
         results["by_region_count"] = dict(zip(labels, map(int, data)))
 
-    # Weekday stats
     m = re.search(r"Кількість тривог по днях тижня.*?data:\[([^\]]+)\]", html, re.DOTALL)
     if m:
         data = list(map(int, re.findall(r'\d+', m.group(1))))
         days = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', "П'ятниця", 'Субота', 'Неділя']
         results["by_weekday"] = dict(zip(days, data))
 
-    # Hour stats
     m = re.search(r"Кількість тривог по годинам.*?data:\[([^\]]+)\]", html, re.DOTALL)
     if m:
         data = list(map(int, re.findall(r'\d+', m.group(1))))
         hours = [f"{h:02d}:00" for h in range(24)]
         results["by_hour"] = dict(zip(hours, data))
 
-    # Duration
     m = re.search(r"labels:\[([^\]]+)\],datasets:\[\{label:'Тривалість тривог[^']*',data:\[([^\]]+)\]", html, re.DOTALL)
     if m:
         labels = re.findall(r'"(.*?)"', m.group(1))
         data = re.findall(r'([\d.]+)', m.group(2))
         results["by_duration"] = dict(zip(labels, map(float, data)))
 
-    # Explosions
     m = re.search(r"run_by_explosions_count.*?labels:\[([^\]]+)\].*?data:\[([^\]]+)\]", html, re.DOTALL)
     if m:
         labels = re.findall(r'"(.*?)"', m.group(1))
         data = re.findall(r'"?(\d+)"?', m.group(2))
         results["explosions_by_region"] = dict(zip(labels, map(int, data)))
 
-    # Artillery
     m = re.search(r"run_by_attacks_count.*?labels:\[([^\]]+)\].*?data:\[([^\]]+)\]", html, re.DOTALL)
     if m:
         labels = re.findall(r'"(.*?)"', m.group(1))
@@ -107,14 +103,14 @@ def scrape_period(driver, from_date, to_date, max_retries=3):
             html = driver.page_source
 
             if "Just a moment" in html:
-                print(f"  [!] Cloudflare detected (attempt {attempt}/{max_retries}) — waiting 20s...")
+                print(f"  [!] Cloudflare detected (attempt {attempt}/{max_retries}) - waiting 20s...")
                 time.sleep(20)
                 continue
 
             data = extract_chart_data(html)
 
             if not data:
-                print(f"  [!] Empty data on attempt {attempt}/{max_retries} — retrying...")
+                print(f"  [!] Empty data on attempt {attempt}/{max_retries} - retrying...")
                 human_delay(3, 7)
                 continue
 
@@ -124,11 +120,85 @@ def scrape_period(driver, from_date, to_date, max_retries=3):
             print(f"  [!] Attempt {attempt}/{max_retries} failed: {e}")
             human_delay(3, 7)
 
-    print(f"  [x] All {max_retries} attempts failed for {from_date} → {to_date}")
+    print(f"  [x] All {max_retries} attempts failed for {from_date} -> {to_date}")
     return {}
 
+region_map = {
+    'Харківщина': 'Харківська обл.',
+    'Херсонщина': 'Херсонська обл.',
+    'Одещина': 'Одеська обл.',
+    'Дніпропетровщина': 'Дніпропетровська обл.',
+    'Миколаївщина': 'Миколаївська обл.',
+    'Сумщина': 'Сумська обл.',
+    'Житомирщина': 'Житомирська обл.',
+    'Луганщина': 'Луганська обл.',
+    'Чернігівщина': 'Чернігівська обл.',
+    'Донеччина': 'Донецька обл.',
+    'Запоріжжя': 'Запорізька обл.',
+    'Київщина': 'Київська обл.',
+    'Полтавщина': 'Полтавська обл.',
+    'Черкащина': 'Черкаська обл.',
+    'Кіровоградщина': 'Кіровоградська обл.',
+    'Вінниччина': 'Вінницька обл.',
+    'Хмельниччина': 'Хмельницька обл.',
+    'Рівненщина': 'Рівненська обл.',
+    'Волинь': 'Волинська обл.',
+    'Тернопільщина': 'Тернопільська обл.',
+    'Львівщина': 'Львівська обл.',
+    'Івано-Франківщина': 'Івано-Франківська обл.',
+    'Чернівеччина': 'Чернівецька обл.',
+    'Закарпаття': 'Закарпатська обл.',
+    ' АР Крим': 'АР Крим',
+    'АР Крим': 'АР Крим',
+}
+
+def normalize(d):
+    return {region_map.get(k, k): v for k, v in d.items()}
+
+def clean_value(v):
+    if not isinstance(v, (int, float)):
+        try:
+            v = float(v)
+        except:
+            return 0
+    v = float(v)
+    if v == 0:
+        return 0
+    magnitude = math.floor(math.log10(abs(v)))
+    if magnitude > 6:
+        leading = round(v / (10 ** magnitude))
+        return leading
+    return round(v)
+
+def build_dataframe(all_results):
+    rows = []
+    for month in all_results:
+        from_date = month.get("period_from")
+        to_date = month.get("period_to")
+
+        region_counts = normalize(month.get("by_region_count", {}))
+        durations = normalize(month.get("by_duration", {}))
+        artillery = normalize(month.get("artillery_by_region", {}))
+        explosions = normalize(month.get("explosions_by_region", {}))
+
+        for region in region_counts:
+            rows.append({
+                "period_from": from_date,
+                "period_to": to_date,
+                "region": region,
+                "alarm_count": clean_value(region_counts.get(region, 0)),
+                "duration_hours": clean_value(durations.get(region, 0)),
+                "artillery_count": clean_value(artillery.get(region, 0)),
+                "explosions_count": clean_value(explosions.get(region, 0)),
+            })
+
+    df = pd.DataFrame(rows)
+    for col in ['alarm_count', 'duration_hours', 'artillery_count', 'explosions_count']:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+    return df
+
 def main():
-    OUTPUT_FILE = "air_alarms_historical.json"
+    OUTPUT_FILE = "air_alarms_historical.parquet"
     CHECKPOINT_FILE = "checkpoint.json"
 
     all_results = load_checkpoint(CHECKPOINT_FILE)
@@ -179,13 +249,23 @@ def main():
     finally:
         driver.quit()
 
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(all_results, f, ensure_ascii=False, indent=2)
+    df = build_dataframe(all_results)
+    df.to_parquet(OUTPUT_FILE, index=False)
 
     if os.path.exists(CHECKPOINT_FILE):
         os.remove(CHECKPOINT_FILE)
 
-    print(f"\nDone. Saved {len(all_results)} months to {OUTPUT_FILE}.")
+    print(f"\nDone. Saved {len(df)} rows to {OUTPUT_FILE}.")
+
+    numeric_df = df[['alarm_count', 'duration_hours', 'artillery_count', 'explosions_count']]
+    print("Non-zero counts per column:")
+    print((numeric_df > 0).sum())
+
+    print("\n> Top regions by alarms:")
+    print(df.groupby('region')['alarm_count'].sum().sort_values(ascending=False).head(10))
+
+    print("\n> Sample mid-2022:")
+    print(df[df['period_from'] == '2022-06-01'][['region','alarm_count','duration_hours','explosions_count']].head(10))
 
 
 if __name__ == "__main__":
