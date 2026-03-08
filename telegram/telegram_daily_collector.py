@@ -58,7 +58,7 @@ async def main():
                 print(f"Error in {channel}: {e}")
 
     if not data:
-        print("Nothing was collected")
+        print("Nothing collected.")
         return
 
     df = pd.DataFrame(data)
