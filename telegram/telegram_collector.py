@@ -4,7 +4,7 @@ import os
 import asyncio
 from telethon import TelegramClient
 from dotenv import load_dotenv
-from text_cleaner import clean_text
+from text_cleaner import clean_text as clean
 from event_detector import detect_events
 
 load_dotenv()
@@ -20,11 +20,10 @@ CHANNELS = [
 
 SINCE_DATE = datetime(2022, 2, 24, tzinfo=timezone.utc)
 
-OUTPUT_FILE = os.path.join(os.getcwd(), "war_prediction", "telegram_data.csv")
+OUTPUT_FILE = "telegram_data.csv"
 
 async def main():
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] Start collecting...")
-    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
 
     data = []
 
@@ -36,7 +35,7 @@ async def main():
                         break
                     if not message.text:
                         continue
-                    clean_text = clean_text(message.text)
+                    clean_text = clean(message.text)
                     events = detect_events(clean_text)
                     if not events:
                         continue
@@ -60,9 +59,5 @@ async def main():
     df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8")
 
     print(f"Collected {len(df)} posts. Saved to {OUTPUT_FILE}")
-
-asyncio.run(main())
-
-    print(f"Added {len(data)} new posts. Current number: {len(combined_df)}")
 
 asyncio.run(main())
