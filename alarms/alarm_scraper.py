@@ -198,14 +198,14 @@ def build_dataframe(all_results):
     return df
 
 def main():
-    OUTPUT_FILE = "air_alarms_historical.parquet"
+    OUTPUT_FILE = "air_alarms_historical.csv"
     CHECKPOINT_FILE = "checkpoint.json"
 
     all_results = load_checkpoint(CHECKPOINT_FILE)
     scraped_periods = {r["period_from"] for r in all_results}
 
     start = date(2022, 2, 24)
-    end = date.today()
+    end = date(2026, 3, 1)
     current = start
 
     driver = make_driver()
@@ -250,7 +250,7 @@ def main():
         driver.quit()
 
     df = build_dataframe(all_results)
-    df.to_parquet(OUTPUT_FILE, index=False)
+    df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8")
 
     if os.path.exists(CHECKPOINT_FILE):
         os.remove(CHECKPOINT_FILE)
@@ -270,3 +270,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
