@@ -58,7 +58,7 @@ def run_daily() -> None:
     try:
         toplines = scrape_toplines(link)
         append_rows([[str(report_date), toplines]])
-        log(f"[+] Collected {report_date} — {len(toplines.split('/'))} toplines.")
+        log(f"[+] Collected {report_date} - {len(toplines.split('/'))} toplines.")
     except Exception as e:
         log(f"[!] Failed to scrape {report_date}: {e}")
 
