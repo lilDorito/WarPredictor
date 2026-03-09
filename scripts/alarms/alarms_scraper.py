@@ -44,6 +44,7 @@ def make_driver(percent_width=80, percent_height=80, download_dir=None):
     options.add_argument("--disable-blink-features=AutomationControlled")
 
     if download_dir:
+        os.makedirs(download_dir, exist_ok=True)
         prefs = {
             "download.default_directory": os.path.abspath(download_dir),
             "download.prompt_for_download": False,
