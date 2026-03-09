@@ -147,7 +147,7 @@ def main():
     print(f"Already done: {len(scraped)} days")
     print(f"CSVs -> {OUTPUT_DIR}\n")
 
-    driver = make_driver()
+    driver = make_driver(download_dir=DOWNLOAD_DIR)
 
     current_display = [date.today().replace(day=1)]
 
