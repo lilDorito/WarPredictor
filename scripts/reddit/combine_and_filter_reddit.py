@@ -1,10 +1,14 @@
 import pandas as pd
 import os
+import sys
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+INPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
+OUTPUT_FILE = os.path.join(ROOT, "datasets", "reddit", "reddit_data.csv")
+
+sys.path.append(os.path.dirname(__file__))
 from text_cleaner import clean_text as clean
 from event_detector import detect_events
-
-INPUT_DIR = "output"
-OUTPUT_FILE = "reddit_data.csv"
 
 def process_file(path: str, source: str) -> pd.DataFrame:
     df = pd.read_csv(path, dtype=str)
@@ -13,13 +17,12 @@ def process_file(path: str, source: str) -> pd.DataFrame:
     df = df.dropna(subset=["body"])
     df = df[df["body"].str.strip() != ""]
     df = df[~df["body"].isin(["[removed]", "[deleted]"])]
-    df["body"] = df["body"].apply(clean)
+    df["body"]   = df["body"].apply(clean)
     df["events"] = df["body"].apply(detect_events).apply(lambda e: ",".join(sorted(e)))
     df = df[df["events"] != ""]
     return df
 
 frames = []
-
 for filename in sorted(os.listdir(INPUT_DIR)):
     if not filename.endswith(".csv"):
         continue
@@ -41,5 +44,6 @@ else:
     combined = pd.concat(frames, ignore_index=True)
     combined = combined.drop_duplicates(subset=["id"])
     combined = combined.sort_values("created_utc", ascending=False)
+    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
     combined.to_csv(OUTPUT_FILE, index=False, encoding="utf-8")
-    print(f"\nDone. {len(combined)} total rows saved to {OUTPUT_FILE}")
+    print(f"\nDone. {len(combined)} total rows -> {OUTPUT_FILE}")
