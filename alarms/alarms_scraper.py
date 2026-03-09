@@ -1,124 +1,185 @@
-import requests
-import pandas as pd
-from datetime import date, timedelta, datetime
-from dotenv import load_dotenv
-import os
-import json
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+
 import time
+import os
+import glob
+import json
+import shutil
+from datetime import date, timedelta
+import calendar
 
-load_dotenv()
+DOWNLOAD_DIR = os.path.abspath("alert_downloads")
+CHECKPOINT_FILE = "alerts_checkpoint.json"
+OUTPUT_DIR = os.path.abspath("alert_csvs")
 
-API_KEY = os.getenv("UKRAINE_ALARM_API_KEY")
-BASE_URL = "https://api.ukrainealarm.com/api/v3"
-OUTPUT_FILE = "air_alarms_historical.csv"
-CHECKPOINT_FILE = "alarm_checkpoint.json"
+def make_driver():
+    options = Options()
+    options.add_argument("--no-sandbox")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-blink-features=AutomationControlled")
 
-def validate_config():
-    if not API_KEY:
-        raise Exception("UKRAINE_ALARM_API_KEY environment variable is not set")
+    prefs = {
+        "download.default_directory": DOWNLOAD_DIR,
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "safebrowsing.enabled": True,
+    }
 
-def get_date_history(target_date: date) -> list:
-    date_str = target_date.strftime("%Y%m%d")
-    headers = {"Authorization": API_KEY}
-    response = requests.get(
-        f"{BASE_URL}/alerts/dateHistory",
-        headers=headers,
-        params={"date": date_str},
-        timeout=10
-    )
-    response.raise_for_status()
-    return response.json()
+    options.add_experimental_option("prefs", prefs)
+    return webdriver.Chrome(options=options)
 
-def parse_records(raw: list, target_date: date) -> list:
-    rows = []
-    for alert in raw:
-        duration = alert.get("duration", {})
-        rows.append({
-            "date": str(target_date),
-            "region_id": alert.get("regionId"),
-            "region_name": alert.get("regionName"),
-            "start_date": alert.get("startDate"),
-            "end_date": alert.get("endDate"),
-            "alert_type": alert.get("alertType"),
-            "is_continue": alert.get("isContinue"),
-            "duration_hours": duration.get("hours", 0),
-            "duration_minutes": duration.get("minutes", 0),
-            "duration_seconds": duration.get("seconds", 0),
-            "total_hours": duration.get("totalHours", 0),
-            "total_minutes": duration.get("totalMinutes", 0),
-        })
-    return rows
+def wait_for_app(driver, timeout=40):
+    WebDriverWait(driver, timeout).until(lambda d: len(d.find_elements(By.CSS_SELECTOR, ".vc-container")) > 0)
+    time.sleep(4)
 
-def load_checkpoint() -> set:
+def navigate_to_month(driver, target_date, current_display: list):
+    displayed = current_display[0]
+    months_delta = (displayed.year - target_date.year) * 12 + (displayed.month - target_date.month)
+
+    if months_delta > 0:
+        for _ in range(months_delta):
+            prev_btn = driver.find_element(By.CSS_SELECTOR, ".vc-arrow.is-left")
+            driver.execute_script("arguments[0].click();", prev_btn)
+            time.sleep(0.25)
+    elif months_delta < 0:
+        for _ in range(abs(months_delta)):
+            next_btn = driver.find_element(By.CSS_SELECTOR, ".vc-arrow.is-right")
+            driver.execute_script("arguments[0].click();", next_btn)
+            time.sleep(0.25)
+
+    current_display[0] = target_date.replace(day=1)
+
+def click_day(driver, target_date):
+    try:
+        selector = (
+            f'.vc-day.id-{target_date.isoformat()}'
+            ':not(.is-not-in-month):not(.is-disabled) .vc-day-content'
+        )
+        day_el = WebDriverWait(driver, 10).until(
+            lambda d: d.find_element(By.CSS_SELECTOR, selector)
+        )
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", day_el)
+        driver.execute_script("arguments[0].click();", day_el)
+        time.sleep(2)
+        return True
+    except Exception as e:
+        print(f"[!] Could not click day {target_date}: {e}")
+        return False
+
+def click_export(driver) -> bool:
+    try:
+        links = WebDriverWait(driver, 15).until(
+            lambda d: [
+                a for a in d.find_elements(By.CSS_SELECTOR, "a")
+                if "CSV" in (a.text or "") or "Експортувати" in (a.text or "")
+            ]
+        )
+        if links:
+            driver.execute_script("arguments[0].click();", links[0])
+            return True
+    except Exception as e:
+        print(f"[!] Export click error: {e}")
+    return False
+
+def wait_for_download(timeout=40):
+    start = time.time()
+    while time.time() - start < timeout:
+        files = [
+            f for f in glob.glob(os.path.join(DOWNLOAD_DIR, "*.csv"))
+            if not f.endswith(".crdownload")
+        ]
+        if files:
+            time.sleep(0.5)
+            return files[0]
+        time.sleep(0.5)
+    return None
+
+def load_checkpoint():
     if os.path.exists(CHECKPOINT_FILE):
         with open(CHECKPOINT_FILE, "r") as f:
             data = json.load(f)
-        print(f"[i] Resuming from checkpoint — {len(data)} days already scraped.")
+        print(f"[i] Resuming - {len(data)} days already downloaded.")
         return set(data)
     return set()
 
-def save_checkpoint(scraped_dates: set) -> None:
+def save_checkpoint(done):
     with open(CHECKPOINT_FILE, "w") as f:
-        json.dump(sorted(scraped_dates), f)
+        json.dump(sorted(done), f)
 
 def main():
-    validate_config()
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    scraped_dates = load_checkpoint()
+    scraped = load_checkpoint()
 
     start = date(2022, 2, 24)
     end = date.today() - timedelta(days=1)
-    current = start
-
     total_days = (end - start).days + 1
-    done = 0
 
-    print(f"Scraping {start} -> {end} ({total_days} days total)")
-    print(f"Already done: {len(scraped_dates)} days\n")
+    print(f"Downloading alerts.in.ua: {start} -> {end} ({total_days} days)")
+    print(f"Already done: {len(scraped)} days")
+    print(f"CSVs -> {OUTPUT_DIR}\n")
 
-    while current <= end:
-        date_key = str(current)
+    driver = make_driver()
 
-        if date_key in scraped_dates:
+    current_display = [date.today().replace(day=1)]
+
+    try:
+        driver.get("https://alerts.in.ua")
+        wait_for_app(driver)
+        print("[i] App loaded.\n")
+
+        current = start
+        done_counter = 0
+
+        while current <= end:
+            date_key = str(current)
+            done_counter += 1
+
+            if date_key in scraped:
+                print(f"[SKIP] {date_key}")
+                current += timedelta(days=1)
+                continue
+
+            print(f"[{done_counter}/{total_days}] {date_key}...", end=" ", flush=True)
+
+            navigate_to_month(driver, current, current_display)
+
+            for f in glob.glob(os.path.join(DOWNLOAD_DIR, "*.csv")):
+                os.remove(f)
+
+            if not click_day(driver, current):
+                current += timedelta(days=1)
+                continue
+
+            if not click_export(driver):
+                print("[!] Export button not found")
+                current += timedelta(days=1)
+                continue
+
+            path = wait_for_download()
+
+            if path:
+                dest = os.path.join(OUTPUT_DIR, f"alerts_{date_key}.csv")
+                shutil.move(path, dest)
+                print(f"[+] {os.path.getsize(dest)} bytes")
+                scraped.add(date_key)
+                save_checkpoint(scraped)
+            else:
+                print("[!] Download timed out")
+
+            time.sleep(0.6)
             current += timedelta(days=1)
-            done += 1
-            continue
 
-        try:
-            raw = get_date_history(current)
-            rows = parse_records(raw, current)
-            df = pd.DataFrame(rows)
+    except KeyboardInterrupt:
+        print("\n[i] Interrupted - progress saved.")
+    finally:
+        driver.quit()
 
-            file_exists = os.path.exists(OUTPUT_FILE)
-            df.to_csv(OUTPUT_FILE, mode="a", index=False, header=not file_exists, encoding="utf-8")
-
-            scraped_dates.add(date_key)
-            save_checkpoint(scraped_dates)
-
-            done += 1
-            print(f"[+] {date_key} — {len(rows)} alerts ({done}/{total_days})")
-
-        except requests.exceptions.RequestException as e:
-            print(f"[!] {date_key} - API error: {e}, retrying in 10s...")
-            time.sleep(10)
-            continue
-
-        except Exception as e:
-            print(f"[!] {date_key} - Unexpected error: {e}, skipping.")
-
-        time.sleep(0.5)
-        current += timedelta(days=1)
-
-    if os.path.exists(CHECKPOINT_FILE):
-        os.remove(CHECKPOINT_FILE)
-
-    print(f"\nDone. Output saved to {OUTPUT_FILE}.")
-
-    df_full = pd.read_csv(OUTPUT_FILE)
-    print(f"Total rows: {len(df_full)}")
-    print(f"Alert types:\n{df_full['alert_type'].value_counts()}")
-    print(f"\nTop regions by alert count:\n{df_full['region_name'].value_counts().head(10)}")
-
+    print(f"\nDone. {len(scraped)} files in {OUTPUT_DIR}")
 
 if __name__ == "__main__":
     main()
