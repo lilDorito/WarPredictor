@@ -4,16 +4,27 @@ from datetime import datetime, timedelta, timezone
 import time
 import random
 import os
+import sys
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+OUTPUT_FILE = os.path.join(ROOT, "datasets", "reddit", "reddit_data.csv")
+LOG_FILE = os.path.join(ROOT, "logs", "reddit", "daily_collector.log")
+
+sys.path.append(os.path.dirname(__file__))
 from text_cleaner import clean_text as clean
 from event_detector import detect_events
 
 SUBREDDITS = ["ukraine", "worldnews", "combatfootage"]
-OUTPUT_FILE = "reddit_data.csv"
 SINCE = datetime.now(timezone.utc) - timedelta(days=1)
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-}
+def log(msg: str):
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{timestamp}] {msg}"
+    print(line)
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
 
 def human_delay():
     time.sleep(random.uniform(0.5, 2.0))
@@ -21,36 +32,28 @@ def human_delay():
 def fetch_submissions(subreddit):
     posts = []
     after = None
-
     while True:
         url = f"https://www.reddit.com/r/{subreddit}/new.json?limit=100"
         if after:
             url += f"&after={after}"
-
         r = requests.get(url, headers=HEADERS)
         if r.status_code != 200:
-            print(f"  [!] HTTP {r.status_code} on {subreddit}")
+            log(f"[!] HTTP {r.status_code} on {subreddit}")
             break
-
         data = r.json()["data"]
         children = data["children"]
-
         if not children:
             break
-
         for child in children:
             post = child["data"]
             created = datetime.fromtimestamp(post["created_utc"], tz=timezone.utc)
             if created < SINCE:
                 return posts
             posts.append(post)
-
         after = data.get("after")
         if not after:
             break
-
         human_delay()
-
     return posts
 
 def fetch_comments(subreddit, post_id):
@@ -58,19 +61,11 @@ def fetch_comments(subreddit, post_id):
     r = requests.get(url, headers=HEADERS)
     if r.status_code != 200:
         return []
-
     try:
         listing = r.json()[1]["data"]["children"]
     except (IndexError, KeyError):
         return []
-
-    comments = []
-    for child in listing:
-        if child["kind"] != "t1":
-            continue
-        comments.append(child["data"])
-
-    return comments
+    return [c["data"] for c in listing if c["kind"] == "t1"]
 
 def load_existing_ids():
     if os.path.exists(OUTPUT_FILE):
@@ -79,24 +74,22 @@ def load_existing_ids():
     return set()
 
 def main():
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] Start collecting...")
+    log("> Reddit daily collector starting <")
 
     existing_ids = load_existing_ids()
     rows = []
 
     for subreddit in SUBREDDITS:
-        print(f"  Fetching r/{subreddit}...")
+        log(f"Fetching r/{subreddit}...")
         posts = fetch_submissions(subreddit)
-        print(f"  {len(posts)} posts in last 24h")
+        log(f"{len(posts)} posts in last 24h")
 
         for post in posts:
             if post["id"] in existing_ids:
                 continue
-
             text = f"{post.get('title', '')} {post.get('selftext', '')}"
             cleaned = clean(text)
             events = detect_events(cleaned)
-
             if events:
                 rows.append({
                     "id": post["id"],
@@ -112,7 +105,6 @@ def main():
 
             human_delay()
             comments = fetch_comments(subreddit, post["id"])
-
             for comment in comments:
                 if comment["id"] in existing_ids:
                     continue
@@ -133,13 +125,15 @@ def main():
                 existing_ids.add(comment["id"])
 
     if not rows:
-        print("Nothing collected.")
+        log("Nothing collected.")
         return
 
     df = pd.DataFrame(rows)
     file_exists = os.path.exists(OUTPUT_FILE)
+    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
     df.to_csv(OUTPUT_FILE, mode="a", index=False, header=not file_exists, encoding="utf-8")
-    print(f"Added {len(df)} rows to {OUTPUT_FILE}")
+    log(f"Added {len(df)} rows -> {OUTPUT_FILE}")
+    log("Done.\n")
 
-
-main()
+if __name__ == "__main__":
+    main()
