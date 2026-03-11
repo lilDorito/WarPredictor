@@ -52,7 +52,7 @@ def build_weather_dataset(start_date: str) -> pd.DataFrame:
 
     df = pd.DataFrame(all_records)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    output_file = os.path.join(OUTPUT_DIR, f"weather_{start_date}_to_{yesterday}.csv")
+    output_file = os.path.join(OUTPUT_DIR, f"weather_data.csv")
     df.to_csv(output_file, index=False)
     print(f"[i] Done. {len(df):,} rows -> {output_file}")
     return df
