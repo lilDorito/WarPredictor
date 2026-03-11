@@ -21,6 +21,7 @@ def process_file(path: str) -> pd.DataFrame:
     df["body"] = df["body"].apply(clean)
     df["events"] = df["body"].apply(detect_events).apply(lambda e: ",".join(sorted(e)))
     df = df[df["events"] != ""]
+    df["created_utc"] = pd.to_datetime(df["created_utc"].astype(float).astype(int), unit="s", utc=True)
     return df
 
 frames = []
@@ -37,8 +38,8 @@ if not frames:
     print("No files found.")
 else:
     combined = pd.concat(frames, ignore_index=True)
-    combined = combined.drop_duplicates(subset=["id"])
-    combined = combined.sort_values("created_utc", ascending=False)
+    combined.drop_duplicates(subset=["id"], keep="first", inplace=True)
+    combined.sort_values("created_utc", inplace=True)
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
-    combined.to_csv(OUTPUT_FILE, index=False, encoding="utf-8")
+    combined.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
     print(f"\nDone. {len(combined)} total rows -> {OUTPUT_FILE}")

@@ -10,7 +10,6 @@ import glob
 import json
 import shutil
 from datetime import date, timedelta
-import calendar
 
 DOWNLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "datasets", "alarms", "alert_downloads")
 CHECKPOINT_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "datasets", "alarms", "alerts_checkpoint.json")

@@ -63,7 +63,6 @@ def main():
     print(f"Existing IDs loaded: {len(existing_ids)}")
 
     rows = []
-    since_ts, until_ts = int(SINCE.timestamp()), int(UNTIL.timestamp())
 
     for subreddit in SUBREDDITS:
         print(f"\nFetching r/{subreddit}...")
@@ -72,18 +71,19 @@ def main():
 
         for post in posts:
             pid = str(post.get("id", ""))
-            if pid not in existing_ids:
-                text = f"{post.get('title', '')} {post.get('selftext', '') or ''}"
-                cleaned = clean(text)
-                events = detect_events(cleaned)
-                if events:
-                    rows.append({
-                        "id": pid, "author": post.get("author"),
-                        "subreddit": subreddit, "created_utc": post.get("created_utc"),
-                        "score": post.get("score"), "body": cleaned,
-                        "events": ",".join(sorted(events)), "source": "RS"
-                    })
-                    existing_ids.add(pid)
+            if pid in existing_ids:
+                continue
+            text = f"{post.get('title', '')} {post.get('selftext', '') or ''}"
+            cleaned = clean(text)
+            events = detect_events(cleaned)
+            if events:
+                rows.append({
+                    "id": pid, "author": post.get("author"),
+                    "subreddit": subreddit, "created_utc": datetime.fromtimestamp(int(post.get("created_utc")), tz=timezone.utc),
+                    "score": post.get("score"), "body": cleaned,
+                    "events": ",".join(sorted(events)), "source": "RS"
+                })
+                existing_ids.add(pid)
 
             time.sleep(random.uniform(0.3, 0.8))
             for comment in fetch_comments(pid):
@@ -91,14 +91,14 @@ def main():
                 if cid in existing_ids:
                     continue
                 created = int(comment.get("created_utc", 0))
-                if not (since_ts <= created < until_ts):
+                if not (int(SINCE.timestamp()) <= created < int(UNTIL.timestamp())):
                     continue
                 cleaned_c = clean(comment.get("body", ""))
                 events_c = detect_events(cleaned_c)
                 if events_c:
                     rows.append({
                         "id": cid, "author": comment.get("author"),
-                        "subreddit": subreddit, "created_utc": created,
+                        "subreddit": subreddit, "created_utc": datetime.fromtimestamp(created, tz=timezone.utc),
                         "score": comment.get("score"), "body": cleaned_c,
                         "events": ",".join(sorted(events_c)), "source": "RC"
                     })
@@ -110,7 +110,7 @@ def main():
         df = pd.DataFrame(rows)
         file_exists = os.path.exists(OUTPUT_FILE)
         os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
-        df.to_csv(OUTPUT_FILE, mode="a", index=False, header=not file_exists)
+        df.to_csv(OUTPUT_FILE, mode="a", index=False, header=not file_exists, encoding="utf-8-sig")
         print(f"\nDone - {len(df)} rows added to {OUTPUT_FILE}")
     else:
         print("\nNothing collected.")

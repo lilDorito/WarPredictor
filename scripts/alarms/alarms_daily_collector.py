@@ -132,16 +132,28 @@ def parse_alert(alert: dict, region: str, since_dt: datetime, until_dt: datetime
         return None
 
 def merge_overlapping(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
     df = df.sort_values(["region", "alarm_type", "alarm_start"]).reset_index(drop=True)
     rows = df.to_dict("records")
     merged = []
     cur = rows[0].copy()
     for r in rows[1:]:
-        same_group = r["region"] == cur["region"] and r["alarm_type"] == cur["alarm_type"]
-        overlaps = pd.notna(cur["alarm_end"]) and r["alarm_start"] <= cur["alarm_end"]
-        if same_group and overlaps:
+        same_group = (
+            r["region"] == cur["region"]
+            and r["alarm_type"] == cur["alarm_type"]
+        )
+        open_alarm = pd.isna(cur["alarm_end"])
+        overlaps = (
+            pd.notna(cur["alarm_end"])
+            and r["alarm_start"] <= cur["alarm_end"]
+        )
+        if same_group and (overlaps or open_alarm):
             if pd.notna(r["alarm_end"]):
-                cur["alarm_end"] = max(cur["alarm_end"], r["alarm_end"])
+                if pd.isna(cur["alarm_end"]):
+                    cur["alarm_end"] = r["alarm_end"]
+                else:
+                    cur["alarm_end"] = max(cur["alarm_end"], r["alarm_end"])
         else:
             merged.append(cur)
             cur = r.copy()
