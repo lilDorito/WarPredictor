@@ -31,6 +31,7 @@ def main():
     combined.drop_duplicates(subset=["id"], keep="first", inplace=True)
     log(f"Dedup: {before:,} -> {len(combined):,} rows ({before - len(combined)} dropped)")
 
+    combined["created_utc"] = pd.to_datetime(combined["created_utc"], utc=True).dt.tz_localize(None)
     combined.sort_values("created_utc", inplace=True)
     os.makedirs(os.path.dirname(FULL_FILE), exist_ok=True)
     combined.to_csv(FULL_FILE, index=False, encoding="utf-8-sig")
