@@ -37,7 +37,7 @@ def main():
     combined.sort_values("message_date", inplace=True)
     os.makedirs(os.path.dirname(FULL_FILE), exist_ok=True)
     combined.to_csv(FULL_FILE, index=False, encoding="utf-8-sig")
-    log(f"Saved {len(combined):,} rows → {FULL_FILE}")
+    log(f"Saved {len(combined):,} rows -> {FULL_FILE}")
     log("Done.\n")
 
 if __name__ == "__main__":
