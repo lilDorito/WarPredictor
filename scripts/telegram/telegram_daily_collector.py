@@ -45,7 +45,7 @@ async def main():
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     since_date = today - timedelta(days=1)
     until_date = today
-    log(f"Window: {since_date.date()} 00:00 UTC → {until_date.date()} 00:00 UTC")
+    log(f"Window: {since_date.date()} 00:00 UTC -> {until_date.date()} 00:00 UTC")
 
     existing_ids = load_existing_ids()
     data = []
@@ -84,7 +84,7 @@ async def main():
     file_exists = os.path.exists(OUTPUT_FILE)
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
     df.to_csv(OUTPUT_FILE, mode="a", index=False, header=not file_exists, encoding="utf-8")
-    log(f"Added {len(df)} new posts ({since_date.date()}) → {OUTPUT_FILE}")
+    log(f"Added {len(df)} new posts ({since_date.date()}) -> {OUTPUT_FILE}")
     log("Done.\n")
 
 if __name__ == "__main__":
