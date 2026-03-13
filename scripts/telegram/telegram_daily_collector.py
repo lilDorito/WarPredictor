@@ -86,9 +86,9 @@ async def main():
         return
 
     df = pd.DataFrame(data)
-    file_exists = os.path.exists(OUTPUT_FILE)
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
-    df.to_csv(OUTPUT_FILE, mode="a", index=False, header=not file_exists, encoding="utf-8")
+    df = df.sort_values("message_date", ascending=True)
+    df.to_csv(OUTPUT_FILE, mode="w", index=False, header=True, encoding="utf-8")
     log(f"Added {len(df)} new posts ({since_date.date()}) -> {OUTPUT_FILE}")
     log("Done.\n")
 
