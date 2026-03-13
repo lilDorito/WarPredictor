@@ -59,7 +59,6 @@ ALARM_TYPE_MAP = {
 
 KEEP = ["alarm_start", "alarm_end", "region", "region_en", "alarm_type", "duration_min"]
 
-
 def log(msg: str):
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -67,7 +66,6 @@ def log(msg: str):
     print(line)
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(line + "\n")
-
 
 def fetch_oblast(uid: int, retries: int = 3) -> list:
     url = BASE_URL.format(uid=uid)
@@ -85,12 +83,10 @@ def fetch_oblast(uid: int, retries: int = 3) -> list:
             time.sleep(10)
     return []
 
-
 def parse_dt(value: str | None) -> pd.Timestamp:
     if not value:
         return pd.NaT
     return pd.to_datetime(value, utc=True).tz_convert(None)
-
 
 def parse_alert(alert: dict, region: str, since_dt: datetime, until_dt: datetime) -> dict | None:
     try:
@@ -135,7 +131,6 @@ def parse_alert(alert: dict, region: str, since_dt: datetime, until_dt: datetime
         log(f"  [!] Failed to parse alert: {e} | raw: {alert}")
         return None
 
-
 def merge_overlapping(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
@@ -156,25 +151,24 @@ def merge_overlapping(df: pd.DataFrame) -> pd.DataFrame:
             continue
 
         cur_is_open = pd.isna(cur["alarm_end"])
+        is_phantom = (
+            cur_is_open
+            and abs((r["alarm_start"] - cur["alarm_start"]).total_seconds()) <= 60
+        )
         overlaps = (
             pd.notna(cur["alarm_end"])
             and r["alarm_start"] <= cur["alarm_end"]
         )
 
-        if cur_is_open or overlaps:
+        if is_phantom or overlaps:
             if pd.notna(r["alarm_end"]):
-                if cur_is_open:
-                    cur["alarm_end"] = r["alarm_end"]
-                else:
-                    cur["alarm_end"] = max(cur["alarm_end"], r["alarm_end"])
-
+                cur["alarm_end"] = r["alarm_end"]
         else:
             merged.append(cur)
             cur = r.copy()
 
     merged.append(cur)
     return pd.DataFrame(merged)
-
 
 def main():
     log("> Alarms daily collector starting (alerts.in.ua) <")
@@ -269,7 +263,6 @@ def main():
     df.to_csv(OUTPUT_FILE, mode="w", index=False, header=True, encoding="utf-8-sig")
     log(f"[+] Wrote {len(df)} rows -> {OUTPUT_FILE}")
     log("Done.\n")
-
 
 if __name__ == "__main__":
     main()

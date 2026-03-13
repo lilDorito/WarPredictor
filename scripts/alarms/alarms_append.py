@@ -41,17 +41,18 @@ def merge_overlapping(df: pd.DataFrame) -> pd.DataFrame:
             continue
 
         cur_is_open = pd.isna(cur["alarm_end"])
+        is_phantom = (
+            cur_is_open
+            and abs((r["alarm_start"] - cur["alarm_start"]).total_seconds()) <= 60
+        )
         overlaps = (
             pd.notna(cur["alarm_end"])
             and r["alarm_start"] <= cur["alarm_end"]
         )
 
-        if cur_is_open or overlaps:
+        if is_phantom or overlaps:
             if pd.notna(r["alarm_end"]):
-                if cur_is_open:
-                    cur["alarm_end"] = r["alarm_end"]
-                else:
-                    cur["alarm_end"] = max(cur["alarm_end"], r["alarm_end"])
+                cur["alarm_end"] = r["alarm_end"]
         else:
             merged.append(cur)
             cur = r.copy()
@@ -109,7 +110,6 @@ def main():
     combined.to_csv(FULL_FILE, index=False, encoding="utf-8-sig")
     log(f"Saved {len(combined):,} rows -> {FULL_FILE}")
     log("Done.\n")
-
 
 if __name__ == "__main__":
     main()

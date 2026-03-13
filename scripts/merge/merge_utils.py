@@ -39,25 +39,29 @@ def process_weather(path: str) -> pd.DataFrame:
         cloudcover_mean=("cloudcover", "mean"),
     ).reset_index()
 
-
 def process_alarms(path: str) -> pd.DataFrame:
     df = pd.read_csv(path)
     df["alarm_start"] = pd.to_datetime(df["alarm_start"])
     df["alarm_end"] = pd.to_datetime(df["alarm_end"])
     df["region"] = df["region_en"]
     df = df.dropna(subset=["region"])
- 
-    yesterday = pd.Timestamp.now().floor("D") - pd.Timedelta(seconds=1)
-    df["alarm_end"] = df["alarm_end"].fillna(yesterday)
- 
+
     df["duration_min"] = (df["alarm_end"] - df["alarm_start"]).dt.total_seconds() / 60
- 
+
     df["hour_start"] = df["alarm_start"].dt.floor("h")
     df["hour_end"] = df["alarm_end"].dt.floor("h")
-    df["n_hours"] = ((df["hour_end"] - df["hour_start"]) / pd.Timedelta("1h")).astype(int) + 1
- 
+
+    now_hour = pd.Timestamp.now().floor("h")
+
+    open_mask = df["alarm_end"].isna()
+    closed = df[~open_mask].copy()
+    open_ = df[open_mask].copy()
+
+    closed["n_hours"] = ((closed["hour_end"] - closed["hour_start"]) / pd.Timedelta("1h")).astype(int) + 1
+
     records = []
-    for _, row in tqdm(df.iterrows(), total=len(df), desc="  alarms", unit="alarms"):
+
+    for _, row in tqdm(closed.iterrows(), total=len(closed), desc="  alarms (closed)", unit="alarms"):
         for h in pd.date_range(start=row["hour_start"], periods=row["n_hours"], freq="h"):
             records.append({
                 "timestamp_hour": h,
@@ -67,34 +71,25 @@ def process_alarms(path: str) -> pd.DataFrame:
                 "alarm_active": 1,
                 "duration_min": row["duration_min"],
             })
- 
+
+    for _, row in tqdm(open_.iterrows(), total=len(open_), desc="  alarms (open)", unit="alarms"):
+        n_hours = int((now_hour - row["hour_start"]) / pd.Timedelta("1h")) + 1
+        for h in pd.date_range(start=row["hour_start"], periods=n_hours, freq="h"):
+            records.append({
+                "timestamp_hour": h,
+                "region": row["region"],
+                "alarm_started": int(h == row["hour_start"]),
+                "alarm_ended": 0,
+                "alarm_active": 1,
+                "duration_min": None,
+            })
+
     return pd.DataFrame(records).groupby(["timestamp_hour", "region"]).agg(
         alarms_started=("alarm_started", "sum"),
         alarms_ended=("alarm_ended", "sum"),
         alarms_active=("alarm_active", "sum"),
         alarm_duration_min_sum=("duration_min", "sum"),
     ).reset_index()
-
-def process_reddit(path: str) -> pd.DataFrame:
-    df = pd.read_csv(path)
-    df["timestamp_hour"] = (
-        pd.to_datetime(df["created_utc"], utc=True)
-        .dt.tz_convert(None)
-        .dt.floor("h")
-    )
-
-    event_dummies = df["events"].str.get_dummies(sep=",").add_prefix("reddit_event_")
-    df = pd.concat([df, event_dummies], axis=1)
-    event_cols = list(event_dummies.columns)
-
-    agg_dict = {
-        "reddit_post_count": ("id", "count"),
-        "reddit_score_sum": ("score", "sum"),
-    }
-    for col in event_cols:
-        agg_dict[col] = (col, "sum")
-
-    return df.groupby("timestamp_hour").agg(**agg_dict).reset_index()
 
 def process_telegram(path: str, chunk_size: int = 10_000) -> pd.DataFrame:
     print("  [telegram] reading file...")

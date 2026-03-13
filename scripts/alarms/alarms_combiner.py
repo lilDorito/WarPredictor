@@ -40,24 +40,24 @@ def merge_overlapping(df: pd.DataFrame) -> pd.DataFrame:
             continue
 
         cur_is_open = pd.isna(cur["alarm_end"])
+        is_phantom = (
+            cur_is_open
+            and abs((r["alarm_start"] - cur["alarm_start"]).total_seconds()) <= 60
+        )
         overlaps = (
             pd.notna(cur["alarm_end"])
             and r["alarm_start"] <= cur["alarm_end"]
         )
 
-        if cur_is_open or overlaps:
+        if is_phantom or overlaps:
             if pd.notna(r["alarm_end"]):
-                if cur_is_open:
-                    cur["alarm_end"] = r["alarm_end"]
-                else:
-                    cur["alarm_end"] = max(cur["alarm_end"], r["alarm_end"])
+                cur["alarm_end"] = r["alarm_end"]
         else:
             merged.append(cur)
             cur = r.copy()
 
     merged.append(cur)
     return pd.DataFrame(merged)
-
 
 def main():
     files = sorted(glob.glob(os.path.join(INPUT_DIR, "alerts_*.csv")))
@@ -160,7 +160,6 @@ def main():
         print(f"\n[!] {len(errors)} files had errors:")
         for path, err in errors:
             print(f"    {os.path.basename(path)}: {err}")
-
 
 if __name__ == "__main__":
     main()
