@@ -249,3 +249,4 @@ notebooks/
 *.ipynb
 .ipynb_checkpoints/
 *.png
+.vscode/
