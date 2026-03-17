@@ -100,6 +100,14 @@ def main():
         (combined["alarm_end"] - combined["alarm_start"]).dt.total_seconds() / 60
     )
 
+    max_date = combined["alarm_start"].max()
+    stale = combined["alarm_end"].isna() & (combined["alarm_start"] < max_date - pd.Timedelta(days=30))
+    stale_count = stale.sum()
+    combined.loc[stale, "alarm_end"] = combined.loc[stale, "alarm_start"] + pd.Timedelta(hours=1)
+    combined.loc[stale, "duration_min"] = 60
+    if stale_count:
+        log(f"Closed {stale_count} stale open alarms (DST artifacts)")
+
     bad_mask = combined["duration_min"].notna() & (combined["duration_min"] <= 0)
     bad_count = bad_mask.sum()
     combined = combined[~bad_mask]

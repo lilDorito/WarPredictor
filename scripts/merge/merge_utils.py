@@ -39,42 +39,84 @@ def process_weather(path: str) -> pd.DataFrame:
         cloudcover_mean=("cloudcover", "mean"),
     ).reset_index()
 
-def process_alarms(path: str, date_filter: pd.Timestamp = None) -> pd.DataFrame:
+def process_alarms(path: str, date_end: pd.Timestamp = None) -> pd.DataFrame:
     df = pd.read_csv(path)
 
     for col in ["alarm_start", "alarm_end"]:
-        df[col] = pd.to_datetime(df[col], errors="coerce", utc=True) \
-            .dt.tz_convert("Europe/Kyiv") \
-            .dt.tz_localize(None)
+        df[col] = pd.to_datetime(df[col], errors="coerce", format="ISO8601")
 
-    df["region"] = df["region_en"]
+    if "region_en" in df.columns:
+        df["region"] = df["region_en"]
+    elif "region" not in df.columns:
+        raise ValueError("No region column found in alarms CSV!")
+    df = df.drop(columns=[c for c in ["region_en"] if c in df.columns])
     df = df.dropna(subset=["region"])
 
-    df["duration_min"] = (df["alarm_end"] - df["alarm_start"]).dt.total_seconds() / 60
+    if date_end is not None:
+        df = df[df["alarm_start"] <= pd.Timestamp(date_end)].copy()
 
     df["hour_start"] = df["alarm_start"].dt.floor("h")
     df["hour_end"] = df["alarm_end"].dt.floor("h")
+    df["duration_min"] = (df["alarm_end"] - df["alarm_start"]).dt.total_seconds() / 60
 
-    open_mask = df["alarm_end"].isna()
-    closed = df[~open_mask].copy()
-    open_ = df[open_mask].copy()
+    def close_open_alarms(group: pd.DataFrame) -> pd.DataFrame:
+        group = group.sort_values("alarm_start").reset_index(drop=True)
+        open_idx = group.index[group["alarm_end"].isna()].to_list()
+    
+        for i in range(len(open_idx) - 1):
+            idx = open_idx[i]
+            next_start = group.loc[open_idx[i+1], "alarm_start"]
+            group.at[idx, "alarm_end"] = next_start - pd.Timedelta(seconds=1)
+            group.at[idx, "hour_end"] = (next_start - pd.Timedelta(seconds=1)).floor('h')
+            group.at[idx, "duration_min"] = (group.at[idx, "alarm_end"] - group.at[idx, "alarm_start"]).total_seconds() / 60
 
-    closed = closed[closed["hour_start"].notna() & closed["hour_end"].notna()]
-    closed["n_hours"] = ((closed["hour_end"] - closed["hour_start"]) / pd.Timedelta("1h")).astype("Int64") + 1
+        if open_idx:
+            last_idx = open_idx[-1]
+            last_start = group.at[last_idx, "alarm_start"]
+            later_closed = group[
+                (group["alarm_end"].notna()) & 
+                (group["alarm_start"] > last_start)
+            ]
+            if not later_closed.empty:
+                next_start = later_closed["alarm_start"].min()
+                group.at[last_idx, "alarm_end"] = next_start - pd.Timedelta(seconds=1)
+                group.at[last_idx, "hour_end"] = (next_start - pd.Timedelta(seconds=1)).floor('h')
+                group.at[last_idx, "duration_min"] = (group.at[last_idx, "alarm_end"] - last_start).total_seconds() / 60
 
+        return group
+
+    group_cols = ["region", "alarm_type"] if "alarm_type" in df.columns else ["region"]
+    chunks = []
+    for key, grp in df.groupby(group_cols):
+        chunks.append(close_open_alarms(grp))
+    df = pd.concat(chunks, ignore_index=True)
+
+    mask_open = df["alarm_end"].isna()
+    closed = df[~mask_open].copy()
+    open_ = df[mask_open].copy()
+
+    closed = closed[closed["hour_start"].notna() & closed["hour_end"].notna()].copy()
+    closed["n_hours"] = ((closed["hour_end"] - closed["hour_start"]) / pd.Timedelta("1h")).astype(int) + 1
     closed = closed.loc[closed.index.repeat(closed["n_hours"])].copy()
-    closed["timestamp_hour"] = closed.groupby(level=0).cumcount().apply(lambda x: pd.Timedelta(hours=x)) + closed["hour_start"]
+    closed["timestamp_hour"] = closed["hour_start"] + pd.to_timedelta(
+        closed.groupby(level=0).cumcount(), unit="h"
+    )
+    closed = closed.reset_index(drop=True)
     closed["alarm_started"] = (closed["timestamp_hour"] == closed["hour_start"]).astype(int)
     closed["alarm_ended"] = (closed["timestamp_hour"] == closed["hour_end"]).astype(int)
     closed["alarm_active"] = 1
 
     if not open_.empty:
-        max_hour_in_dataset = pd.concat([closed["hour_end"], open_["hour_start"]]).max()
+        if date_end is None:
+            date_end = closed["hour_end"].max()
+        max_hour = pd.Timestamp(date_end).floor("h")
         open_ = open_[open_["hour_start"].notna()].copy()
-        open_["n_hours"] = ((max_hour_in_dataset - open_["hour_start"]) / pd.Timedelta("1h")).astype("Int64") + 1
-
+        open_["n_hours"] = ((max_hour - open_["hour_start"]) / pd.Timedelta("1h")).astype(int) + 1
         open_ = open_.loc[open_.index.repeat(open_["n_hours"])].copy()
-        open_["timestamp_hour"] = open_.groupby(level=0).cumcount().apply(lambda x: pd.Timedelta(hours=x)) + open_["hour_start"]
+        open_["timestamp_hour"] = open_["hour_start"] + pd.to_timedelta(
+            open_.groupby(level=0).cumcount(), unit="h"
+        )
+        open_ = open_.reset_index(drop=True)
         open_["alarm_started"] = (open_["timestamp_hour"] == open_["hour_start"]).astype(int)
         open_["alarm_ended"] = 0
         open_["alarm_active"] = 1
@@ -86,7 +128,7 @@ def process_alarms(path: str, date_filter: pd.Timestamp = None) -> pd.DataFrame:
         alarms_started=("alarm_started", "sum"),
         alarms_ended=("alarm_ended", "sum"),
         alarms_active=("alarm_active", "sum"),
-        alarm_duration_min_sum=("duration_min", "sum"),
+        alarm_duration_min_sum=("duration_min", "sum")
     ).reset_index()
 
     return result
@@ -175,65 +217,92 @@ def process_isw(path: str) -> pd.DataFrame:
 # Merge
 
 def merge_sources(
-    spine:    pd.DataFrame,
-    weather:  pd.DataFrame,
-    alarms:   pd.DataFrame,
+    spine: pd.DataFrame,
+    weather: pd.DataFrame,
+    alarms: pd.DataFrame,
     telegram: pd.DataFrame,
-    isw:      pd.DataFrame,
-    reddit:   pd.DataFrame,
+    isw: pd.DataFrame,
+    reddit: pd.DataFrame,
 ) -> pd.DataFrame:
     df = spine
     for name, source, keys in [
-        ("weather",  weather,  ["timestamp_hour", "region"]),
-        ("alarms",   alarms,   ["timestamp_hour", "region"]),
+        ("weather", weather, ["timestamp_hour", "region"]),
+        ("alarms", alarms, ["timestamp_hour", "region"]),
         ("telegram", telegram, ["timestamp_hour", "region"]),
-        ("isw",      isw,      ["timestamp_hour"]),
-        ("reddit",   reddit,   ["timestamp_hour"]),
+        ("isw", isw, ["timestamp_hour"]),
+        ("reddit", reddit, ["timestamp_hour"]),
     ]:
         df = df.merge(source, on=keys, how="left")
         print(f"  > {name:<10} {df.shape}")
 
     num_cols = df.select_dtypes(include=[np.number]).columns
     df[num_cols] = df[num_cols].fillna(0)
+    if "alarm_duration_min_sum" in df.columns:
+        df["alarm_duration_min_sum"] = pd.to_numeric(df["alarm_duration_min_sum"], errors="coerce").fillna(0)
+    if "toplines" in df.columns:
+        df["toplines"] = df["toplines"].fillna("")
     return df
 
 # Save / append
 
-def save_to_csv(df: pd.DataFrame, path: str, alarms_path: str = None, date_filter: pd.Timestamp = None):
-    df["timestamp_hour"] = df["timestamp_hour"].astype(str)
+def save_to_csv(df: pd.DataFrame, path: str, alarms_path=None):
     output = Path(path)
 
+    df = df.copy()
+    df["timestamp_hour"] = pd.to_datetime(df["timestamp_hour"])
+    df.set_index(["timestamp_hour", "region"], inplace=True)
+
     if not output.exists():
-        df.sort_values(["timestamp_hour", "region"], inplace=True)
-        df.to_csv(output, index=False)
-        print(f"Created {path}  ({len(df):,} rows)")
+        df.sort_index(inplace=True)
+        num_cols = df.select_dtypes(include=[np.number]).columns
+        df[num_cols] = df[num_cols].fillna(0)
+        if "toplines" in df.columns:
+            df["toplines"] = df["toplines"].fillna("")
+        df.to_csv(output)
+        print(f"Created {path} ({len(df):,} rows)")
         return
 
-    existing = pd.read_csv(output)
+    existing = pd.read_csv(output, parse_dates=["timestamp_hour"])
+    existing.set_index(["timestamp_hour", "region"], inplace=True)
+
+    new_rows = df.loc[~df.index.isin(existing.index)]
+    combined = pd.concat([existing, new_rows]) if len(new_rows) else existing
+    combined.sort_index(inplace=True)
 
     if alarms_path:
-        alarm_cols = [c for c in existing.columns if c.startswith("alarm")]
-        existing = existing.drop(columns=alarm_cols, errors="ignore")
-        fresh_alarms = process_alarms(alarms_path, date_filter=date_filter)
-        fresh_alarms["timestamp_hour"] = fresh_alarms["timestamp_hour"].astype(str)
-        existing = existing.merge(fresh_alarms, on=["timestamp_hour", "region"], how="left")
-        alarm_num_cols = [c for c in fresh_alarms.columns if c not in ["timestamp_hour", "region"]]
-        existing[alarm_num_cols] = existing[alarm_num_cols].fillna(0)
-        print(f"  Alarms reprocessed from scratch")
+        fresh_alarms = process_alarms(
+            alarms_path,
+            date_end=combined.index.get_level_values("timestamp_hour").max()
+        )
+        fresh_alarms["timestamp_hour"] = pd.to_datetime(fresh_alarms["timestamp_hour"])
+        fresh_alarms = fresh_alarms.set_index(["timestamp_hour", "region"])
 
-    existing["_key"] = existing["timestamp_hour"] + "|" + existing["region"].astype(str)
-    df["_key"] = df["timestamp_hour"] + "|" + df["region"].astype(str)
-    new_rows = df[~df["_key"].isin(existing["_key"])].drop(columns="_key")
-    existing = existing.drop(columns="_key")
+        alarm_cols = fresh_alarms.columns
+        max_ts = combined.index.get_level_values("timestamp_hour").max()
+        combined = combined.reset_index()
+        fresh_alarms = fresh_alarms.reset_index()
 
-    if not len(new_rows):
+        combined = combined.merge(
+            fresh_alarms[["timestamp_hour", "region"] + list(alarm_cols)],
+            on=["timestamp_hour", "region"],
+            how="left",
+            suffixes=("_old", "")
+        )
+        for col in alarm_cols:
+            if f"{col}_old" in combined.columns:
+                combined = combined.drop(columns=[f"{col}_old"])
+            combined[col] = pd.to_numeric(combined[col], errors="coerce").fillna(0)
+        combined = combined.set_index(["timestamp_hour", "region"])
+        print("Alarms recomputed")
+
+    num_cols = combined.select_dtypes(include=[np.number]).columns
+    combined[num_cols] = combined[num_cols].fillna(0)
+    if "toplines" in combined.columns:
+        combined["toplines"] = combined["toplines"].fillna("")
+    combined.sort_index(inplace=True)
+    combined.to_csv(output)
+
+    if len(new_rows):
+        print(f"Appended {len(new_rows):,} rows -> {path}")
+    else:
         print("No new rows - already up to date.")
-        existing.sort_values(["timestamp_hour", "region"], inplace=True)
-        existing.to_csv(output, index=False)
-        return
-
-    combined = pd.concat([existing, new_rows], ignore_index=True)
-    combined.drop_duplicates(subset=["timestamp_hour", "region"], keep="first", inplace=True)
-    combined.sort_values(["timestamp_hour", "region"], inplace=True)
-    combined.to_csv(output, index=False)
-    print(f"Appended {len(new_rows):,} rows -> {path}  ({len(combined):,} total)")

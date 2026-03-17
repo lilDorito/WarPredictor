@@ -7,7 +7,6 @@ from merge_utils import (
 
 PATHS = {
     "weather": "datasets/weather/weather_daily.csv",
-    "alarms": "datasets/alarms/alarms_daily.csv",
     "alarms_full": "datasets/alarms/alarms_data.csv",
     "reddit": "datasets/reddit/reddit_daily.csv",
     "telegram": "datasets/telegram/telegram_daily.csv",
@@ -16,19 +15,24 @@ PATHS = {
 }
 
 if __name__ == "__main__":
+    # day_before_yesterday = pd.Timestamp.now("UTC").tz_localize(None).floor("D") - pd.Timedelta(days=2)
+    # date_start = day_before_yesterday
+    # date_end = day_before_yesterday + pd.Timedelta(hours=23)
+
     yesterday = pd.Timestamp.now("UTC").tz_localize(None).floor("D") - pd.Timedelta(days=1)
+    date_start = yesterday
     date_end = yesterday + pd.Timedelta(hours=23)
 
-    print(f"Daily merge for {yesterday.date()}")
+    print(f"Daily merge for {date_start.date()}")
     print("Building spine...")
-    spine = build_spine(str(yesterday.date()), date_end)
+    spine = build_spine(str(date_start.date()), date_end)
     print(f"  {len(spine)} rows\n")
 
     print("Processing sources...")
     weather = process_weather(PATHS["weather"])
     print("  [+] weather")
-    alarms = process_alarms(PATHS["alarms"])
-    print("  [+] alarms")
+    alarms = pd.DataFrame(columns=["timestamp_hour", "region", "alarms_started", "alarms_ended", "alarms_active", "alarm_duration_min_sum"])
+    print("  [+] alarms (skipped - recomputed from full in save_to_csv)")
     telegram = process_telegram(PATHS["telegram"])
     print("  [+] telegram")
     isw = process_isw(PATHS["isw"])
@@ -40,4 +44,4 @@ if __name__ == "__main__":
     df = merge_sources(spine, weather, alarms, telegram, isw, reddit)
 
     print(f"Final shape: {df.shape}")
-    save_to_csv(df, PATHS["output"], alarms_path=PATHS["alarms_full"], date_filter=yesterday)
+    save_to_csv(df, PATHS["output"], alarms_path=PATHS["alarms_full"])

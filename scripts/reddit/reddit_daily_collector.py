@@ -18,6 +18,8 @@ SUBREDDITS = ["ukraine", "worldnews"]
 today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 SINCE = today - timedelta(days=1)
 UNTIL = today
+# SINCE = today - timedelta(days=2)
+# UNTIL = today - timedelta(days=1)
 HEADERS = {"User-Agent": "conflict-event-backfill/1.0"}
 ARCTIC = "https://arctic-shift.photon-reddit.com/api"
 

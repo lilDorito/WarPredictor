@@ -89,7 +89,7 @@ def fetch_oblast(uid: int, retries: int = 3) -> list:
 def parse_dt(value: str | None) -> pd.Timestamp:
     if not value:
         return pd.NaT
-    return pd.to_datetime(value, utc=True).tz_convert("Europe/Kyiv").tz_localize(None)
+    return pd.to_datetime(value, utc=True).tz_localize(None)
 
 def parse_alert(alert: dict, region: str, since_dt: datetime, until_dt: datetime) -> dict | None:
     try:
@@ -180,9 +180,16 @@ def main():
         log("[!] ALERTS_IN_UA_API_KEY not set in .env")
         return
 
-    today = datetime.now(KYIV).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
-    since_dt = today - timedelta(days=1)
-    until_dt = today 
+    today_kyiv = datetime.now(KYIV).replace(hour=0, minute=0, second=0, microsecond=0)
+    since_kyiv = today_kyiv - timedelta(days=1)
+    until_kyiv = today_kyiv - timedelta(days=0)
+    # today_kyiv = datetime.now(KYIV).replace(hour=0, minute=0, second=0, microsecond=0)
+    # since_kyiv = today_kyiv - timedelta(days=2)
+    # until_kyiv = today_kyiv - timedelta(days=1)
+
+    since_dt = since_kyiv.astimezone(timezone.utc).replace(tzinfo=None)
+    until_dt = until_kyiv.astimezone(timezone.utc).replace(tzinfo=None)
+    
     log(f"Window: {since_dt} -> {until_dt}")
 
     rows = []
@@ -206,8 +213,8 @@ def main():
     if os.path.exists(COMBINED_FILE):
         try:
             hist = pd.read_csv(COMBINED_FILE, encoding="utf-8-sig")
-            hist["alarm_start"] = pd.to_datetime(hist["alarm_start"])
-            hist["alarm_end"] = pd.to_datetime(hist["alarm_end"])
+            hist["alarm_start"] = pd.to_datetime(hist["alarm_start"], format="ISO8601")
+            hist["alarm_end"] = pd.to_datetime(hist["alarm_end"], format="ISO8601")
 
             present_regions = {r["region"] for r in rows} if rows else set()
 

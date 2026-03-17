@@ -24,6 +24,7 @@ def log(msg: str):
 
 def main():
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    # yesterday = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
 
     log("> Weather daily collector starting <")
     log(f"Window: {yesterday}")

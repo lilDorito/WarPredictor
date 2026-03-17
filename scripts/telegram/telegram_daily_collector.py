@@ -44,6 +44,7 @@ async def main():
     log("> Telegram daily collector starting <")
 
     TARGET_DATE = None # insert for backfill date like "2026-03-12"
+    # TARGET_DATE = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
 
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     if TARGET_DATE:

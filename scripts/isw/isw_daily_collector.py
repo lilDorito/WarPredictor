@@ -65,6 +65,7 @@ def run_daily() -> None:
     log("> ISW daily collector starting <")
 
     yesterday = (datetime.now() - timedelta(days=1)).date()
+    # yesterday = (datetime.now() - timedelta(days=2)).date()
 
     links = get_all_links()
     if not links:

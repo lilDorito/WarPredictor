@@ -27,7 +27,7 @@ if __name__ == "__main__":
     print("Processing sources...")
     weather = process_weather(PATHS["weather"])
     print("  [+] weather")
-    alarms = process_alarms(PATHS["alarms"])
+    alarms = process_alarms(PATHS["alarms"], date_end=date_end)
     print("  [+] alarms")
     telegram = process_telegram(PATHS["telegram"])
     print("  [+] telegram")

@@ -75,16 +75,10 @@ def main():
         try:
             df = pd.read_csv(path, encoding="utf-8", usecols=COLUMNS.keys())
             df = df.rename(columns=COLUMNS)
-            df["alarm_start"] = pd.to_datetime(
-                df["alarm_start"],
-                format="%d.%m.%Y, %H:%M:%S",
-                errors="coerce"
-            )
-            df["alarm_end"] = pd.to_datetime(
-                df["alarm_end"],
-                format="%d.%m.%Y, %H:%M:%S",
-                errors="coerce"
-            )
+            for col in ["alarm_start", "alarm_end"]:
+                df[col] = pd.to_datetime(df[col], format="%d.%m.%Y, %H:%M:%S", errors="coerce")\
+                        .dt.tz_localize("Europe/Kyiv", ambiguous="NaT", nonexistent="shift_forward")\
+                        .dt.tz_convert("UTC").dt.tz_localize(None)
             dfs.append(df)
         except Exception as e:
             errors.append((path, str(e)))
@@ -135,6 +129,14 @@ def main():
         (combined["alarm_end"] - combined["alarm_start"])
         .dt.total_seconds() / 60
     )
+
+    max_date = combined["alarm_start"].max()
+    stale = combined["alarm_end"].isna() & (combined["alarm_start"] < max_date - pd.Timedelta(days=30))
+    stale_count = stale.sum()
+    combined.loc[stale, "alarm_end"] = combined.loc[stale, "alarm_start"] + pd.Timedelta(hours=1)
+    combined.loc[stale, "duration_min"] = 60
+    if stale_count:
+        print(f"[i] Closed {stale_count} stale open alarms (DST artifacts)")
 
     bad_mask = combined["duration_min"].notna() & (combined["duration_min"] <= 0)
     bad_count = bad_mask.sum()
