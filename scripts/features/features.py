@@ -13,7 +13,7 @@ FEATURES = os.path.join(ROOT, "datasets", "features.csv")
 def add_targets(df: pd.DataFrame) -> pd.DataFrame:
     df["alarms_active"] = (df["alarms_active"] > 0).astype(int)
     
-    for h in range(1, 25):
+    for h in range(6, 30):
         df[f"target_alarm_t{h}"] = df.groupby("region_id")["alarms_active"].shift(-h)
     
     return df
@@ -21,7 +21,7 @@ def add_targets(df: pd.DataFrame) -> pd.DataFrame:
 def main():
     if os.path.exists(FEATURES):
         os.remove(FEATURES)
-        print("Old features deleted. Starting fresh...")
+        print("[!] Old features deleted. Starting fresh...\n")
 
     df = pd.read_csv(MERGED, parse_dates=["timestamp_hour"])
     df.columns = df.columns.str.strip()
@@ -35,23 +35,23 @@ def main():
 
     df = df.sort_values(["region_id", "timestamp_hour"]).reset_index(drop=True)
 
-    print("Applying Timed...")
+    print("> Applying Timed...")
     df = timed.add_time_features(df)
     
-    print("Applying Alarms...")
+    print("> Applying Alarms...")
     df = alarms.add_alarm_features(df)
     df = df.copy()
     
-    print("Applying Weather...")
+    print("> Applying Weather...")
     df = weather.add_weather_features(df)
     df = df.copy()
     
-    print("Applying Telegram/Reddit...")
+    print("> Applying Telegram/Reddit...")
     df = telegram.add_telegram_features(df)
     df = reddit.add_reddit_features(df)
     df = df.copy()
     
-    print("Applying ISW...")
+    print("> Applying ISW...")
     df = isw.add_isw_features(df)
     
     df = add_targets(df)
@@ -74,7 +74,7 @@ def main():
     df[target_cols] = df[target_cols].astype("int8")
 
     df.to_csv(FEATURES, index=False)
-    print(f"[i] Features saved. Shape: {df.shape}")
+    print(f"\n[i] Features saved. Shape: {df.shape}")
 
 if __name__ == "__main__":
     main()
