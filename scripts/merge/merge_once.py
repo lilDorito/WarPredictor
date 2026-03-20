@@ -1,4 +1,5 @@
 import pandas as pd
+import os
 from merge_utils import (
     build_spine, merge_sources, save_to_csv,
     process_weather, process_alarms, process_reddit,
@@ -7,13 +8,15 @@ from merge_utils import (
 
 DATE_START = "2022-02-24"
 
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
 PATHS = {
-    "weather": "datasets/weather/weather_data.csv",
-    "alarms": "datasets/alarms/alarms_data.csv",
-    "reddit": "datasets/reddit/reddit_data.csv",
-    "telegram": "datasets/telegram/telegram_data.csv",
-    "isw": "datasets/isw/isw_data.csv",
-    "output": "datasets/merged.csv",
+    "weather": os.path.join(ROOT, "datasets/weather/weather_data.csv"),
+    "alarms": os.path.join(ROOT, "datasets/alarms/alarms_data.csv"),
+    "reddit": os.path.join(ROOT, "datasets/reddit/reddit_data.csv"),
+    "telegram": os.path.join(ROOT, "datasets/telegram/telegram_data.csv"),
+    "isw": os.path.join(ROOT, "datasets/isw/isw_data.csv"),
+    "output": os.path.join(ROOT, "datasets/merged.csv"),
 }
 
 if __name__ == "__main__":

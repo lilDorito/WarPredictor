@@ -1,17 +1,20 @@
 import pandas as pd
+import os
 from merge_utils import (
     build_spine, merge_sources, save_to_csv,
     process_weather, process_alarms, process_reddit,
     process_telegram, process_isw,
 )
 
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
 PATHS = {
-    "weather": "datasets/weather/weather_daily.csv",
-    "alarms_full": "datasets/alarms/alarms_data.csv",
-    "reddit": "datasets/reddit/reddit_daily.csv",
-    "telegram": "datasets/telegram/telegram_daily.csv",
-    "isw": "datasets/isw/isw_daily.csv",
-    "output": "datasets/merged.csv",
+    "weather": os.path.join(ROOT, "datasets/weather/weather_daily.csv"),
+    "alarms_full": os.path.join(ROOT, "datasets/alarms/alarms_data.csv"),
+    "reddit": os.path.join(ROOT, "datasets/reddit/reddit_daily.csv"),
+    "telegram": os.path.join(ROOT, "datasets/telegram/telegram_daily.csv"),
+    "isw": os.path.join(ROOT, "datasets/isw/isw_daily.csv"),
+    "output": os.path.join(ROOT, "datasets/merged.csv"),
 }
 
 if __name__ == "__main__":
