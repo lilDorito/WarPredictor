@@ -217,7 +217,7 @@ __marimo__/
 *.db
 
 # Generated output folders
-output/
+plots/
 dumps/
 tmp/
 comments/
